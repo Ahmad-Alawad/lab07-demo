@@ -2,6 +2,8 @@
 // Express
 const express = require('express');
 
+const superagent = require('superagent');
+
 // initialize a server
 const server = express();
 
@@ -13,6 +15,9 @@ server.use(cors()); // give access
 // get all environment variable you need
 require('dotenv').config();
 const PORT = process.env.PORT || 3000;
+const GEOCODE_API_KEY = process.env.GEOCODE_API_KEY;
+const DARKSKY_API_KEY = process.env.DARKSKY_API_KEY;
+
 
 // Make the app listening
 server.listen(PORT, () => console.log('Listening at port 3000'));
@@ -31,6 +36,9 @@ server.get('/', (request, response) => {
   }
 */
 
+
+server.get('/location', locationHandler);
+
 function Location(city, locationData){
     this.formatted_query = locationData[0].display_name;
     this.latitude = locationData[0].lat;
@@ -38,50 +46,54 @@ function Location(city, locationData){
     this.search_query = city;
 }
 
-
-
-server.get('/location', locationHandler);
-
 function locationHandler(request, response){
-    // Read the city from the user (request)
-    // find the city in geo.json
+    // Read the city from the user (request) and respond
     let city = request.query['city'];
-    const locationData = require('./data/geo.json');
-    let location = new Location(city, locationData);
-
-    response.status(200).send(location);
+    getLocationData(city)
+        .then( (data) => {
+            response.status(200).send(data);
+        });
 }
+function getLocationData(city){
+    const url = `https://us1.locationiq.com/v1/search.php?key=${GEOCODE_API_KEY}&q=${city}&format=json&limit=1`;
 
-/*
-[
-  {
-    "forecast": "Partly cloudy until afternoon.",
-    "time": "Mon Jan 01 2001"
-  },
-  {
-    "forecast": "Mostly cloudy in the morning.",
-    "time": "Tue Jan 02 2001"
-  },
-  ...
-]
-*/
+    // Superagent
+    return superagent.get(url)
+        .then( (data) => {
+            let location = new Location(city, data.body);
+            return location;
+        });
+    }
+
+
+
 server.get('/weather', weatherHandler);
 
-function weatherHandler(request, response){
-
-    const weatherData = require('./data/darksky.json');
-    let weather = weatherData.daily.data.map((day) => {
-        return new Weather(day);}
-    );
-
-    response.status(200).send(weather);
-}
-
-
 function Weather(day){
-    this.time = new Date(day.time);
+    this.time = new Date(day.time*1000).toDateString();
     this.forecast = day.summary;
 }
+
+function weatherHandler(request, response){
+    let lat = request.query['latitude'];
+    let lng = request.query['longitude'];
+    getWeatherData(lat, lng)
+    .then( (data) => {
+        response.status(200).send(data);
+    });
+    
+}
+
+function getWeatherData(lat, lng){
+    const url = `https://api.darksky.net/forecast/${DARKSKY_API_KEY}/${lat},${lng}`;
+    return superagent.get(url)
+        .then( (weatherData) => {
+            console.log(weatherData.body.daily.data);
+            let weather = weatherData.body.daily.data.map((day) => new Weather(day));
+            return weather;
+    });
+}
+
 
 
 server.use('*', (request, response) => {
